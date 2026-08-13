@@ -90,6 +90,22 @@ const STUDY_DATA = {
         title: "Pace Yourself",
         desc: "You have as much time as you need. Use scratch paper for the math problems and double-check your arithmetic!"
       }
+    ],
+    externalResources: [
+      {
+        name: "ETS ParaPro Assessment Overview & Prep",
+        provider: "Educational Testing Service (ETS)",
+        desc: "Official test specifications, candidate handbooks, and sample questions for the Title I Paraprofessional Assessment.",
+        url: "https://www.ets.org/parapro",
+        tag: "Official Test Specifications"
+      },
+      {
+        name: "NEA Paraprofessional & ESP Resources",
+        provider: "National Education Association",
+        desc: "Professional development resources, Title I compliance guidelines, and instructional support tips for paraeducators.",
+        url: "https://www.nea.org",
+        tag: "Professional Standards"
+      }
     ]
   },
 
@@ -247,7 +263,30 @@ const STUDY_DATA = {
         }
       ],
       keyTakeaway: "Key Takeaway for the Exam: In K-3 reading scenarios, the right answer almost always involves <strong>prompting the student to use a strategy</strong> (sounding it out, looking for context clues, summarizing, making a prediction) rather than the adult doing the mental work for them."
-    }
+    },
+    externalResources: [
+      {
+        name: "Reading Rockets",
+        provider: "WETA / PBS",
+        desc: "In-depth modules on Phonemic Awareness, Phonics, Fluency, Vocabulary, and Comprehension strategies for early readers.",
+        url: "https://www.readingrockets.org",
+        tag: "Literacy & Instruction"
+      },
+      {
+        name: "Florida Center for Reading Research (FCRR)",
+        provider: "Florida State University",
+        desc: "Free, evidence-based K-3 student center activities and intervention guides for decoding and fluency.",
+        url: "https://fcrr.org/student-center-activities",
+        tag: "Activities & Interventions"
+      },
+      {
+        name: "Khan Academy: Reading & Vocabulary",
+        provider: "Khan Academy",
+        desc: "Interactive passage reading comprehension exercises, main idea practice, and vocabulary building.",
+        url: "https://www.khanacademy.org/humanities/grammar",
+        tag: "Comprehension & Vocabulary"
+      }
+    ]
   },
 
   writing: {
@@ -382,7 +421,30 @@ const STUDY_DATA = {
         }
       ],
       keyTakeaway: "Key Takeaway for the Exam: When answering instructional scenario questions, always look for the option that involves <strong>prompting, questioning, scaffolding (like drawing or using graphic organizers), and preserving the student's train of thought</strong>. Avoid answers that have the adult doing the work for the student or demanding immediate perfection."
-    }
+    },
+    externalResources: [
+      {
+        name: "Purdue Online Writing Lab (OWL)",
+        provider: "Purdue University",
+        desc: "Comprehensive reference guides for Subject-Verb Agreement, Pronoun Antecedents, Sentence Fragments, and Modifiers.",
+        url: "https://owl.purdue.edu/owl/general_writing/grammar/index.html",
+        tag: "Grammar & Mechanics"
+      },
+      {
+        name: "Grammar Bytes! (Chomp Chomp)",
+        provider: "ChompChomp.com",
+        desc: "Interactive grammar terms, test-taking tips, and practice exercises tailored for common syntax errors.",
+        url: "https://www.chompchomp.com",
+        tag: "Interactive Practice"
+      },
+      {
+        name: "ReadWriteThink.org",
+        provider: "NCTE & ILA",
+        desc: "Student writing process templates, pre-writing graphic organizers, and self-editing rubrics for K-3.",
+        url: "https://www.readwritethink.org",
+        tag: "Writing Process & Rubrics"
+      }
+    ]
   },
 
   math: {
@@ -511,7 +573,30 @@ const STUDY_DATA = {
         }
       ],
       keyTakeaway: "Key Takeaway for the Exam: In K-3 math scenarios, look for answers that involve <strong>using visual models (manipulatives), breaking tasks down into smaller steps, asking the student to explain their thinking, and analyzing the root cause of an error</strong>."
-    }
+    },
+    externalResources: [
+      {
+        name: "Khan Academy: Early & Elementary Math",
+        provider: "Khan Academy",
+        desc: "Step-by-step video tutorials and interactive practice sets for PEMDAS, fractions, percents, basic algebra, and geometry.",
+        url: "https://www.khanacademy.org/math/early-math",
+        tag: "Video Lessons & Practice"
+      },
+      {
+        name: "Math Antics",
+        provider: "MathAntics.com",
+        desc: "Clear visual walkthroughs of order of operations, fractions, percents, place value, and area/perimeter.",
+        url: "https://mathantics.com",
+        tag: "Visual Tutorials"
+      },
+      {
+        name: "The Math Learning Center - Virtual Apps",
+        provider: "Math Learning Center",
+        desc: "Free interactive digital manipulatives (Ten-Frames, Base-Ten Blocks, Fraction Tiles) to practice visual K-3 strategies.",
+        url: "https://www.mathlearningcenter.org/apps",
+        tag: "Digital Manipulatives"
+      }
+    ]
   },
 
   flashcards: [

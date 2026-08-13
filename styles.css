@@ -1039,6 +1039,13 @@ mark.search-match {
   padding: 0 2px;
 }
 
+/* External Resource Cards */
+.external-resource-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--brand-primary) !important;
+  box-shadow: var(--shadow-md);
+}
+
 /* Responsive Styles */
 @media (max-width: 900px) {
   .sidebar {

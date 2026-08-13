@@ -315,6 +315,43 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
   }
 
+  // Render External Resources card
+  function renderExternalResources(resources, accentVar = '--brand-primary') {
+    if (!resources || !resources.length) return '';
+    return `
+      <div class="card" style="margin-top: 2rem; border-top: 4px solid var(${accentVar});">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div class="card-icon-badge blue" style="width: 32px; height: 32px; font-size: 0.9rem;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </div>
+            <h3 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary);">External Resources</h3>
+          </div>
+          <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">Hand-picked practice tools & official study guides</span>
+        </div>
+        <div class="grid-3" style="gap: 1rem;">
+          ${resources.map(res => `
+            <a href="${res.url}" target="_blank" rel="noopener noreferrer" class="external-resource-card" style="display: flex; flex-direction: column; justify-content: space-between; background: var(--bg-tertiary); padding: 1rem; border-radius: var(--radius-md); text-decoration: none; border: 1px solid var(--border-color); transition: transform var(--transition-fast), border-color var(--transition-fast);">
+              <div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                  <span class="badge" style="background: var(--bg-secondary); color: var(--brand-primary); font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px;">${res.tag}</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                </div>
+                <h4 style="font-size: 1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.25rem;">${res.name}</h4>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 500;">Provider: ${res.provider}</div>
+                <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">${res.desc}</p>
+              </div>
+              <div style="margin-top: 1rem; display: flex; align-items: center; gap: 0.35rem; font-size: 0.825rem; font-weight: 600; color: var(--brand-primary);">
+                <span>Open Resource</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </div>
+            </a>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   // Render General Study Guide
   function renderGeneralGuide() {
     const container = document.getElementById('view-general');
@@ -363,6 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
       `).join('')}
+      ${renderExternalResources(data.externalResources, '--brand-primary')}
     `;
   }
 
@@ -507,6 +545,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('')}
         <div class="callout" style="margin-top:1rem;"><p style="font-size:0.9rem; font-weight:600;">${data.part2.keyTakeaway}</p></div>
       </div>
+      ${renderExternalResources(data.externalResources, '--reading-color')}
     `;
   }
 
@@ -649,6 +688,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('')}
         <div class="callout" style="margin-top:1rem;"><p style="font-size:0.9rem; font-weight:600;">${data.part2.keyTakeaway}</p></div>
       </div>
+      ${renderExternalResources(data.externalResources, '--writing-color')}
     `;
   }
 
@@ -788,6 +828,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('')}
         <div class="callout" style="margin-top:1rem;"><p style="font-size:0.9rem; font-weight:600;">${data.part2.keyTakeaway}</p></div>
       </div>
+      ${renderExternalResources(data.externalResources, '--math-color')}
     `;
 
     // Bind Ten-Frame controls
