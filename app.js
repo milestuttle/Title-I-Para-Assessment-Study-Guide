@@ -180,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function escapeHtml(text) {
-    return text.replace(/[&<>"']/g, function(m) {
+    return text.replace(/[&<>"']/g, function (m) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
     });
   }
@@ -248,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
     container.innerHTML = `
       <div class="hero-banner">
         <h1 class="hero-title">Title I Paraprofessional Exam Study Guide</h1>
-        <p class="hero-subtitle">Comprehensive prep tool for foundational reading, writing, and math skills plus K-3 instructional scenario mastery.</p>
+        <p class="hero-subtitle">Comprehensive prep tool for foundational reading, writing, and math skills plus instructional scenario mastery.</p>
         <div class="hero-stats">
           <div class="stat-pill"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg> 4 Study Modules</div>
           <div class="stat-pill"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg> ${STUDY_DATA.flashcards.length} Interactive Flashcards</div>
@@ -1105,8 +1105,8 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <p style="font-size:0.85rem; color:var(--text-secondary); margin:0;">
             ${state.quiz.mode === 'practice'
-              ? '<strong>Practice Mode:</strong> Answers are checked immediately with step-by-step rationale and explanations so you learn as you go.'
-              : '<strong>Exam Mode:</strong> Answers are saved silently without feedback to simulate official timed exam conditions. A detailed score report is shown upon submission.'}
+        ? '<strong>Practice Mode:</strong> Answers are checked immediately with step-by-step rationale and explanations so you learn as you go.'
+        : '<strong>Exam Mode:</strong> Answers are saved silently without feedback to simulate official timed exam conditions. A detailed score report is shown upon submission.'}
           </p>
         </div>
 
@@ -1114,34 +1114,34 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="margin-bottom:0.5rem; font-size:0.8rem; font-weight:700; color:var(--text-muted);">QUESTION NAVIGATOR:</div>
         <div class="question-nav-grid">
           ${questions.map((q, idx) => {
-            const isCurrent = idx === state.quiz.currentIndex;
-            const isAnswered = state.quiz.userAnswers[q.id] !== undefined;
-            const qFlagged = state.quiz.flaggedIds.includes(q.id);
-            let cls = 'q-nav-btn';
-            if (isCurrent) cls += ' active';
-            if (isAnswered) cls += ' answered';
-            if (qFlagged) cls += ' flagged';
-            return `<button class="${cls}" onclick="window.appJumpToQuestion(${idx})" title="Question ${q.id} ${qFlagged ? '(Flagged)' : ''}">${q.id}</button>`;
-          }).join('')}
+          const isCurrent = idx === state.quiz.currentIndex;
+          const isAnswered = state.quiz.userAnswers[q.id] !== undefined;
+          const qFlagged = state.quiz.flaggedIds.includes(q.id);
+          let cls = 'q-nav-btn';
+          if (isCurrent) cls += ' active';
+          if (isAnswered) cls += ' answered';
+          if (qFlagged) cls += ' flagged';
+          return `<button class="${cls}" onclick="window.appJumpToQuestion(${idx})" title="Question ${q.id} ${qFlagged ? '(Flagged)' : ''}">${q.id}</button>`;
+        }).join('')}
         </div>
 
         <div class="question-text">${currentQ.question}</div>
 
         <div class="options-list">
           ${currentQ.options.map((opt, idx) => {
-            let className = 'option-btn';
-            if (selectedOption === idx) className += ' selected';
-            if (state.quiz.mode === 'practice' && selectedOption !== undefined) {
-              if (idx === currentQ.answer) className += ' correct-choice';
-              else if (selectedOption === idx) className += ' wrong-choice';
-            }
-            return `
+          let className = 'option-btn';
+          if (selectedOption === idx) className += ' selected';
+          if (state.quiz.mode === 'practice' && selectedOption !== undefined) {
+            if (idx === currentQ.answer) className += ' correct-choice';
+            else if (selectedOption === idx) className += ' wrong-choice';
+          }
+          return `
               <button class="${className}" onclick="window.appSelectOption(${currentQ.id}, ${idx})">
                 <span>${opt}</span>
                 ${state.quiz.mode === 'practice' && selectedOption !== undefined && idx === currentQ.answer ? '<span>✓ Correct</span>' : ''}
               </button>
             `;
-          }).join('')}
+        }).join('')}
         </div>
 
         ${state.quiz.mode === 'practice' && selectedOption !== undefined ? `
@@ -1154,8 +1154,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2rem;">
           <button class="btn btn-outline" ${state.quiz.currentIndex === 0 ? 'disabled' : ''} onclick="window.appPrevQuestion()">Previous</button>
           ${state.quiz.currentIndex === questions.length - 1
-            ? `<button class="btn btn-success" onclick="window.appSubmitQuiz()">Submit Assessment</button>`
-            : `<button class="btn btn-primary" onclick="window.appNextQuestion()">Next Question</button>`}
+        ? `<button class="btn btn-success" onclick="window.appSubmitQuiz()">Submit Assessment</button>`
+        : `<button class="btn btn-primary" onclick="window.appNextQuestion()">Next Question</button>`}
         </div>
       </div>
     `;
@@ -1248,10 +1248,10 @@ document.addEventListener('DOMContentLoaded', () => {
         <h3 style="text-align:left; margin:2rem 0 1rem; font-size:1.2rem; font-weight:700;">Question Review & Explanations</h3>
         <div style="text-align:left; display:flex; flex-direction:column; gap:1rem;">
           ${questions.map(q => {
-            const userChoice = state.quiz.userAnswers[q.id];
-            const isCorrect = userChoice === q.answer;
-            const isFlagged = state.quiz.flaggedIds.includes(q.id);
-            return `
+      const userChoice = state.quiz.userAnswers[q.id];
+      const isCorrect = userChoice === q.answer;
+      const isFlagged = state.quiz.flaggedIds.includes(q.id);
+      return `
               <div class="card" style="border-left: 4px solid ${isCorrect ? 'var(--writing-color)' : '#ef4444'};">
                 <div style="font-weight:700; font-size:0.95rem; margin-bottom:0.5rem; display:flex; justify-content:space-between; align-items:center;">
                   <span>Q${q.id}. ${q.question}</span>
@@ -1266,7 +1266,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </p>
               </div>
             `;
-          }).join('')}
+    }).join('')}
         </div>
 
         <button class="btn btn-primary" style="margin-top:2rem;" onclick="window.appRetakeQuiz()">Retake Assessment</button>
