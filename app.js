@@ -7,15 +7,20 @@ document.addEventListener('DOMContentLoaded', () => {
     flashcards: {
       currentIndex: 0,
       filterCategory: 'All',
-      masteredIds: JSON.parse(localStorage.getItem('masteredFlashcards') || '[]')
+      masteredIds: JSON.parse(localStorage.getItem('masteredFlashcards') || '[]'),
+      shuffledDeck: null
     },
     quiz: {
       mode: 'practice', // 'practice' or 'exam'
       currentIndex: 0,
       userAnswers: {},
       bookmarkedIds: [],
+      flaggedIds: [],
       completed: false,
       score: 0,
+      timerSeconds: 1800, // 30 minutes
+      timerRunning: false,
+      timerInterval: null,
       history: JSON.parse(localStorage.getItem('quizHistory') || '[]')
     },
     manipulatives: {
@@ -44,78 +49,48 @@ document.addEventListener('DOMContentLoaded', () => {
   renderFlashcards();
   renderQuiz();
   updateProgressWidget();
-  setupEventListeners();
 
-  // Theme Handling
-  function initTheme() {
-    document.documentElement.setAttribute('data-theme', state.theme);
-    updateThemeToggleText();
-  }
-
-  function toggleTheme() {
-    state.theme = state.theme === 'light' ? 'dark' : 'light';
-    localStorage.setItem('theme', state.theme);
-    document.documentElement.setAttribute('data-theme', state.theme);
-    updateThemeToggleText();
-  }
-
-  function updateThemeToggleText() {
-    if (!themeToggleBtn) return;
-    themeToggleBtn.innerHTML = state.theme === 'light'
-      ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg> Dark Mode`
-      : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg> Light Mode`;
-  }
-
-  // Navigation Logic
-  function switchTab(tabId) {
-    state.currentTab = tabId;
-    navLinks.forEach(link => {
-      if (link.dataset.tab === tabId) {
-        link.classList.add('active');
-      } else {
-        link.classList.remove('active');
-      }
+  // Navigation Event Listeners
+  if (mobileMenuToggle && sidebar) {
+    mobileMenuToggle.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
     });
-
-    viewSections.forEach(section => {
-      if (section.id === `view-${tabId}`) {
-        section.classList.add('active');
-      } else {
-        section.classList.remove('active');
-      }
-    });
-
-    if (window.innerWidth <= 900) {
-      sidebar.classList.remove('open');
-    }
-
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  // Event Listeners Setup
-  function setupEventListeners() {
-    if (themeToggleBtn) themeToggleBtn.addEventListener('click', toggleTheme);
-    
-    if (mobileMenuToggle) {
-      mobileMenuToggle.addEventListener('click', () => {
-        sidebar.classList.toggle('open');
-      });
-    }
-
-    navLinks.forEach(link => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const tab = link.dataset.tab;
-        if (tab) switchTab(tab);
-      });
+  navLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const tab = link.dataset.tab;
+      if (tab) switchTab(tab);
     });
+  });
 
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        handleGlobalSearch(e.target.value);
-      });
-    }
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      handleGlobalSearch(e.target.value);
+    });
   }
+
+  // Keyboard Navigation for Flashcards
+  document.addEventListener('keydown', (e) => {
+    if (state.currentTab !== 'flashcards') return;
+    if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      window.appPrevFlashcard();
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      window.appNextFlashcard();
+    } else if (e.key === ' ' || e.code === 'Space') {
+      e.preventDefault();
+      window.appFlipFlashcard();
+    } else if (e.key.toLowerCase() === 'm') {
+      e.preventDefault();
+      const card = getActiveFlashcard();
+      if (card) window.appToggleMastered(card.id);
+    }
+  });
 
   // Progress Tracker Widget
   function updateProgressWidget() {
@@ -141,65 +116,125 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchView = document.getElementById('view-search');
     const searchResultsContainer = document.getElementById('search-results');
     if (!query || query.trim().length < 2) {
-      if (state.currentTab === 'search') switchTab('dashboard');
+      if (searchView) searchView.classList.remove('active');
+      const activeSection = document.getElementById(`view-${state.currentTab}`);
+      if (activeSection) activeSection.classList.add('active');
       return;
     }
 
-    switchTab('search');
-    const q = query.toLowerCase().trim();
-    let results = [];
+    viewSections.forEach(section => section.classList.remove('active'));
+    if (searchView) searchView.classList.add('active');
 
-    // Search study data
-    ['reading', 'writing', 'math'].forEach(modKey => {
-      const mod = STUDY_DATA[modKey];
-      if (mod.part1 && mod.part1.topics) {
-        mod.part1.topics.forEach(t => {
-          if (t.title.toLowerCase().includes(q) || (t.content && t.content.toLowerCase().includes(q))) {
-            results.push({ module: mod.title, section: t.title, text: t.content || t.title, tab: modKey });
-          }
-        });
+    const cleanQuery = query.toLowerCase().trim();
+    const results = [];
+
+    // Search Reading Module
+    STUDY_DATA.reading.part1.topics.forEach(t => {
+      if (t.title.toLowerCase().includes(cleanQuery) || (t.content && t.content.toLowerCase().includes(cleanQuery))) {
+        results.push({ module: 'Expanded Reading', title: t.title, snippet: t.content || '', tab: 'reading' });
       }
-      if (mod.part2 && mod.part2.topics) {
-        mod.part2.topics.forEach(t => {
-          if (t.title.toLowerCase().includes(q) || (t.content && t.content.toLowerCase().includes(q))) {
-            results.push({ module: mod.title, section: t.title, text: t.content || t.title, tab: modKey });
-          }
-        });
+    });
+
+    // Search Writing Module
+    STUDY_DATA.writing.part1.topics.forEach(t => {
+      if (t.title.toLowerCase().includes(cleanQuery) || (t.content && t.content.toLowerCase().includes(cleanQuery))) {
+        results.push({ module: 'Expanded Writing', title: t.title, snippet: t.content || '', tab: 'writing' });
+      }
+    });
+
+    // Search Math Module
+    STUDY_DATA.math.part1.topics.forEach(t => {
+      if (t.title.toLowerCase().includes(cleanQuery) || (t.content && t.content.toLowerCase().includes(cleanQuery))) {
+        results.push({ module: 'Expanded Math', title: t.title, snippet: t.content || '', tab: 'math' });
       }
     });
 
     // Search Flashcards
-    STUDY_DATA.flashcards.forEach(fc => {
-      if (fc.question.toLowerCase().includes(q) || fc.answer.toLowerCase().includes(q)) {
-        results.push({ module: `Flashcard (${fc.category})`, section: fc.question, text: fc.answer, tab: 'flashcards' });
+    STUDY_DATA.flashcards.forEach(f => {
+      if (f.question.toLowerCase().includes(cleanQuery) || f.answer.toLowerCase().includes(cleanQuery)) {
+        results.push({ module: `Flashcard (${f.category})`, title: f.question, snippet: f.answer, tab: 'flashcards' });
       }
     });
 
-    // Search Assessment
-    STUDY_DATA.assessment.questions.forEach(quest => {
-      if (quest.question.toLowerCase().includes(q) || quest.explanation.toLowerCase().includes(q)) {
-        results.push({ module: `Assessment Question ${quest.id}`, section: quest.question, text: quest.explanation, tab: 'quiz' });
+    if (searchResultsContainer) {
+      if (results.length === 0) {
+        searchResultsContainer.innerHTML = `
+          <div class="card" style="text-align:center; padding:3rem 1rem;">
+            <p style="color:var(--text-secondary); font-size:1.1rem;">No matching concepts found for "<strong>${escapeHtml(query)}</strong>".</p>
+            <p style="font-size:0.9rem; color:var(--text-muted); margin-top:0.5rem;">Try searching for terms like <em>PEMDAS</em>, <em>phonemes</em>, <em>modifiers</em>, or <em>fluency</em>.</p>
+          </div>
+        `;
+      } else {
+        searchResultsContainer.innerHTML = `
+          <p style="color:var(--text-secondary); margin-bottom:1rem;">Found <strong>${results.length}</strong> matching concept(s) for "<strong>${escapeHtml(query)}</strong>":</p>
+          ${results.map(r => `
+            <div class="card" style="margin-bottom:1rem; cursor:pointer;" onclick="window.appSwitchTab('${r.tab}')">
+              <span class="flashcard-category" style="margin-bottom:0.35rem; display:inline-block;">${r.module}</span>
+              <h4 style="font-size:1.1rem; font-weight:700; color:var(--brand-primary); margin-bottom:0.35rem;">${r.title}</h4>
+              <p style="font-size:0.9rem; color:var(--text-secondary);">${r.snippet}</p>
+            </div>
+          `).join('')}
+        `;
       }
-    });
-
-    // Render results
-    if (results.length === 0) {
-      searchResultsContainer.innerHTML = `<div class="card"><p class="scenario-why">No matches found for "${query}". Try searching for terms like "PEMDAS", "fluency", "echo reading", "inventive spelling", or "subject-verb".</p></div>`;
-    } else {
-      searchResultsContainer.innerHTML = results.map(res => `
-        <div class="card" style="margin-bottom:1rem; cursor:pointer;" onclick="window.appSwitchTab('${res.tab}')">
-          <span class="flashcard-category">${res.module}</span>
-          <h4 style="margin: 0.5rem 0; color:var(--brand-primary);">${res.section}</h4>
-          <p style="font-size:0.9rem; color:var(--text-secondary);">${highlightMatch(res.text, q)}</p>
-        </div>
-      `).join('');
     }
   }
 
-  function highlightMatch(text, query) {
-    if (!text) return '';
-    const regex = new RegExp(`(${query})`, 'gi');
-    return text.replace(regex, '<mark class="search-match">$1</mark>');
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, function(m) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+    });
+  }
+
+  // Theme Management
+  function initTheme() {
+    document.documentElement.setAttribute('data-theme', state.theme);
+    updateThemeToggleUI();
+    if (themeToggleBtn) {
+      themeToggleBtn.addEventListener('click', () => {
+        state.theme = state.theme === 'light' ? 'dark' : 'light';
+        localStorage.setItem('theme', state.theme);
+        document.documentElement.setAttribute('data-theme', state.theme);
+        updateThemeToggleUI();
+      });
+    }
+  }
+
+  function updateThemeToggleUI() {
+    if (!themeToggleBtn) return;
+    themeToggleBtn.innerHTML = state.theme === 'light'
+      ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg> Dark Mode`
+      : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg> Light Mode`;
+  }
+
+  // Switch View Tab
+  function switchTab(tabId) {
+    state.currentTab = tabId;
+    navLinks.forEach(link => {
+      if (link.dataset.tab === tabId) {
+        link.classList.add('active');
+      } else {
+        link.classList.remove('active');
+      }
+    });
+
+    viewSections.forEach(section => {
+      if (section.id === `view-${tabId}`) {
+        section.classList.add('active');
+      } else {
+        section.classList.remove('active');
+      }
+    });
+
+    if (sidebar) sidebar.classList.remove('open');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (tabId === 'dashboard') renderDashboard();
+    if (tabId === 'general') renderGeneralGuide();
+    if (tabId === 'reading') renderReadingModule();
+    if (tabId === 'writing') renderWritingModule();
+    if (tabId === 'math') renderMathModule();
+    if (tabId === 'flashcards') renderFlashcards();
+    if (tabId === 'quiz') renderQuiz();
   }
 
   window.appSwitchTab = switchTab;
@@ -231,9 +266,9 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
           <p style="margin-bottom:1rem; color:var(--text-secondary);">${data.welcome}</p>
           ${data.coreCompetencies.map(c => `
-            <div class="callout" style="margin-bottom:0.75rem;">
-              <div class="callout-title" style="color:var(--brand-primary);">${c.num}. ${c.title}</div>
-              <p style="font-size:0.9rem; color:var(--text-secondary);">${c.desc}</p>
+            <div class="competency-card">
+              <div style="font-weight:700; font-size:1.05rem; color:var(--brand-primary); margin-bottom:0.25rem;">${c.num}. ${c.title}</div>
+              <p style="color:var(--text-secondary); font-size:0.9rem;">${c.desc}</p>
             </div>
           `).join('')}
         </div>
@@ -245,26 +280,28 @@ document.addEventListener('DOMContentLoaded', () => {
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
             </div>
           </div>
-          ${data.testTips.map(t => `
-            <div style="margin-bottom:1rem; border-bottom:1px solid var(--border-color); padding-bottom:0.75rem;">
-              <h4 style="font-size:0.95rem; color:var(--text-primary); margin-bottom:0.25rem;">✨ ${t.title}</h4>
-              <p style="font-size:0.875rem; color:var(--text-secondary);">${t.desc}</p>
-            </div>
-          `).join('')}
+          <div style="display:flex; flex-direction:column; gap:1rem;">
+            ${data.testTips.map(tip => `
+              <div>
+                <div style="font-weight:700; font-size:0.95rem; color:var(--text-primary); margin-bottom:0.25rem;">✨ ${tip.title}</div>
+                <p style="font-size:0.875rem; color:var(--text-secondary);">${tip.desc}</p>
+              </div>
+            `).join('')}
+          </div>
         </div>
       </div>
 
-      <h2 style="margin: 2rem 0 1rem; font-size:1.4rem; font-weight:800;">Study Modules Overview</h2>
+      <h3 style="font-size:1.4rem; font-weight:700; margin:2rem 0 1rem; color:var(--text-primary);">Explore Study Modules</h3>
       <div class="grid-3">
         ${data.modulesSummary.map(m => `
           <div class="card" style="cursor:pointer;" onclick="window.appSwitchTab('${m.id}')">
-            <div class="card-header">
-              <h3 class="card-title">${m.title}</h3>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem;">
+              <h4 style="font-weight:700; font-size:1.1rem; color:var(--text-primary);">${m.title}</h4>
               <div class="card-icon-badge ${m.color}">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
               </div>
             </div>
-            <h5 style="color:var(--text-muted); font-size:0.75rem; text-transform:uppercase; margin-bottom:0.5rem;">Personal Proficiency</h5>
+            <h5 style="color:var(--text-muted); font-size:0.75rem; text-transform:uppercase; margin-bottom:0.5rem;">Foundational Skills</h5>
             <ul style="font-size:0.85rem; color:var(--text-secondary); margin-left:1.25rem; margin-bottom:1rem;">
               ${m.foundational.slice(0, 2).map(f => `<li>${f.title}</li>`).join('')}
             </ul>
@@ -329,14 +366,14 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
   }
 
-  // Render Reading Module
+  // Render Expanded Reading Module
   function renderReadingModule() {
     const container = document.getElementById('view-reading');
     if (!container) return;
     const data = STUDY_DATA.reading;
 
     container.innerHTML = `
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:1rem;">
         <div>
           <h2 style="font-size:1.8rem; font-weight:800; color:var(--reading-color);">${data.title}</h2>
           <p style="color:var(--text-secondary);">${data.subtitle}</p>
@@ -344,14 +381,25 @@ document.addEventListener('DOMContentLoaded', () => {
         <button class="btn btn-primary" onclick="window.appSwitchTab('quiz')">Take Reading Quiz</button>
       </div>
 
-      <div class="callout" style="border-left-color:var(--reading-color); background-color:var(--reading-bg); color:var(--text-primary); margin-bottom:2rem;">
+      <div class="callout" style="border-left-color:var(--reading-color); background-color:var(--reading-bg); color:var(--text-primary); margin-bottom:1.5rem;">
         <p style="font-size:0.95rem;">${data.intro}</p>
+      </div>
+
+      <div class="quick-jump-bar">
+        <span class="quick-jump-title">Quick Jump:</span>
+        <a class="jump-pill" onclick="document.getElementById('r1-1')?.scrollIntoView({behavior:'smooth'})">1. Main Idea</a>
+        <a class="jump-pill" onclick="document.getElementById('r1-2')?.scrollIntoView({behavior:'smooth'})">2. Inferences</a>
+        <a class="jump-pill" onclick="document.getElementById('r1-3')?.scrollIntoView({behavior:'smooth'})">3. Vocabulary</a>
+        <a class="jump-pill" onclick="document.getElementById('r1-4')?.scrollIntoView({behavior:'smooth'})">4. Fact vs Opinion</a>
+        <a class="jump-pill" onclick="document.getElementById('r1-5')?.scrollIntoView({behavior:'smooth'})">5. Purpose</a>
+        <a class="jump-pill" onclick="document.getElementById('r1-6')?.scrollIntoView({behavior:'smooth'})">6. Structure</a>
+        <a class="jump-pill" onclick="document.getElementById('r2-1')?.scrollIntoView({behavior:'smooth'})">K-3 Scenarios</a>
       </div>
 
       <!-- Part 1: Foundational Reading -->
       <h3 style="font-size:1.3rem; font-weight:700; margin-bottom:1rem;">${data.part1.title}</h3>
       ${data.part1.topics.map(t => `
-        <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card" id="${t.id}" style="margin-bottom:1.5rem;">
           <h4 class="card-title" style="margin-bottom:0.75rem;">${t.title}</h4>
           <p style="color:var(--text-secondary); margin-bottom:0.75rem;">${t.content || ''}</p>
           ${t.testTip ? `<div class="callout"><div class="callout-title">💡 Test Tip</div><p style="font-size:0.9rem;">${t.testTip}</p></div>` : ''}
@@ -394,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <!-- Part 2: K-3 Reading Scenarios -->
       <h3 style="font-size:1.3rem; font-weight:700; margin:2rem 0 1rem;">${data.part2.title}</h3>
       ${data.part2.topics.map(t => `
-        <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card" id="${t.id}" style="margin-bottom:1.5rem;">
           <h4 class="card-title" style="margin-bottom:0.75rem;">${t.title}</h4>
           <p style="color:var(--text-secondary); margin-bottom:0.75rem;">${t.content || ''}</p>
           ${t.points ? `<ul style="margin-left:1.25rem; font-size:0.9rem; color:var(--text-secondary);">${t.points.map(p => `<li style="margin-bottom:0.35rem;">${p}</li>`).join('')}</ul>` : ''}
@@ -408,30 +456,29 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
           ` : ''}
           ${t.components ? `
-            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
-              ${t.components.map(cmp => `
-                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm); font-size:0.9rem;">
-                  <strong style="color:var(--reading-color);">${cmp.name}:</strong> ${cmp.desc}
+            <div class="grid-3" style="margin-top:0.75rem;">
+              ${t.components.map(cp => `
+                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm);">
+                  <strong style="color:var(--reading-color); display:block; margin-bottom:0.25rem;">${cp.name}</strong>
+                  <p style="font-size:0.85rem; color:var(--text-secondary);">${cp.desc}</p>
                 </div>
               `).join('')}
             </div>
           ` : ''}
           ${t.interventions ? `
-            <div class="grid-2" style="margin-top:0.75rem;">
-              ${t.interventions.map(inv => `
-                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm);">
-                  <strong style="color:var(--reading-color);">${inv.name}:</strong>
-                  <p style="font-size:0.875rem; color:var(--text-secondary);">${inv.desc}</p>
+            <div style="margin-top:0.75rem; display:flex; flex-direction:column; gap:0.5rem;">
+              ${t.interventions.map(it => `
+                <div style="font-size:0.9rem; background:var(--bg-tertiary); padding:0.65rem; border-radius:var(--radius-sm);">
+                  <strong style="color:var(--brand-primary);">${it.name}:</strong> ${it.desc}
                 </div>
               `).join('')}
             </div>
           ` : ''}
           ${t.stages ? `
-            <div style="display:flex; flex-direction:column; gap:0.75rem; margin-top:0.75rem;">
-              ${t.stages.map(stg => `
-                <div style="background:var(--bg-tertiary); padding:0.75rem 1rem; border-radius:var(--radius-md); font-size:0.9rem;">
-                  <strong style="color:var(--brand-primary); display:block; margin-bottom:0.25rem;">${stg.stage}</strong>
-                  <p style="color:var(--text-secondary);">${stg.desc}</p>
+            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
+              ${t.stages.map(st => `
+                <div style="font-size:0.9rem; background:var(--bg-tertiary); padding:0.65rem; border-radius:var(--radius-sm);">
+                  <strong>${st.stage}:</strong> ${st.desc}
                 </div>
               `).join('')}
             </div>
@@ -439,9 +486,9 @@ document.addEventListener('DOMContentLoaded', () => {
           ${t.tools ? `
             <div class="grid-2" style="margin-top:0.75rem;">
               ${t.tools.map(tl => `
-                <div style="background:var(--bg-tertiary); padding:0.75rem 1rem; border-radius:var(--radius-md); font-size:0.9rem;">
-                  <strong style="color:var(--reading-color); display:block; margin-bottom:0.25rem;">${tl.name}</strong>
-                  <p style="color:var(--text-secondary);">${tl.desc}</p>
+                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm);">
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:0.25rem;">${tl.name}</strong>
+                  <p style="font-size:0.85rem; color:var(--text-secondary);">${tl.desc}</p>
                 </div>
               `).join('')}
             </div>
@@ -449,29 +496,28 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `).join('')}
 
-      <h4 style="font-size:1.15rem; font-weight:700; margin:1.5rem 0 1rem;">Practice Reading Scenarios</h4>
-      ${data.part2.scenarios.map(sc => `
-        <div class="scenario-box">
-          <div class="scenario-q">${sc.q}</div>
-          <div class="scenario-correct">${sc.correct}</div>
-          <div class="scenario-why">${sc.why}</div>
-        </div>
-      `).join('')}
-
-      <div class="callout" style="border-left-color:var(--writing-color); background:var(--writing-bg); color:var(--writing-color); font-weight:700;">
-        📌 ${data.part2.keyTakeaway}
+      <div class="card" style="border-top:4px solid var(--reading-color); margin-top:2rem;">
+        <h4 style="font-size:1.1rem; font-weight:700; margin-bottom:1rem;">Practice Scenarios for the Assessment</h4>
+        ${data.part2.scenarios.map(sc => `
+          <div style="margin-bottom:1.25rem;">
+            <p style="font-weight:700; font-size:0.95rem; margin-bottom:0.35rem;">${sc.q}</p>
+            <div class="scenario-correct">${sc.correct}</div>
+            <div class="scenario-why">${sc.why}</div>
+          </div>
+        `).join('')}
+        <div class="callout" style="margin-top:1rem;"><p style="font-size:0.9rem; font-weight:600;">${data.part2.keyTakeaway}</p></div>
       </div>
     `;
   }
 
-  // Render Writing Module
+  // Render Expanded Writing Module
   function renderWritingModule() {
     const container = document.getElementById('view-writing');
     if (!container) return;
     const data = STUDY_DATA.writing;
 
     container.innerHTML = `
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:1rem;">
         <div>
           <h2 style="font-size:1.8rem; font-weight:800; color:var(--writing-color);">${data.title}</h2>
           <p style="color:var(--text-secondary);">${data.subtitle}</p>
@@ -479,10 +525,25 @@ document.addEventListener('DOMContentLoaded', () => {
         <button class="btn btn-primary" onclick="window.appSwitchTab('quiz')">Take Writing Quiz</button>
       </div>
 
+      <div class="callout" style="border-left-color:var(--writing-color); background-color:var(--writing-bg); color:var(--text-primary); margin-bottom:1.5rem;">
+        <p style="font-size:0.95rem;">${data.intro}</p>
+      </div>
+
+      <div class="quick-jump-bar">
+        <span class="quick-jump-title">Quick Jump:</span>
+        <a class="jump-pill" onclick="document.getElementById('w1-1')?.scrollIntoView({behavior:'smooth'})">1. Subject-Verb</a>
+        <a class="jump-pill" onclick="document.getElementById('w1-2')?.scrollIntoView({behavior:'smooth'})">2. Pronouns</a>
+        <a class="jump-pill" onclick="document.getElementById('w1-3')?.scrollIntoView({behavior:'smooth'})">3. Sentence Structure</a>
+        <a class="jump-pill" onclick="document.getElementById('w1-4')?.scrollIntoView({behavior:'smooth'})">4. Punctuation</a>
+        <a class="jump-pill" onclick="document.getElementById('w1-5')?.scrollIntoView({behavior:'smooth'})">5. Modifiers</a>
+        <a class="jump-pill" onclick="document.getElementById('w1-6')?.scrollIntoView({behavior:'smooth'})">6. Confused Words</a>
+        <a class="jump-pill" onclick="document.getElementById('w2-1')?.scrollIntoView({behavior:'smooth'})">K-3 Scenarios</a>
+      </div>
+
       <!-- Part 1: Foundational Writing -->
       <h3 style="font-size:1.3rem; font-weight:700; margin-bottom:1rem;">${data.part1.title}</h3>
       ${data.part1.topics.map(t => `
-        <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card" id="${t.id}" style="margin-bottom:1.5rem;">
           <h4 class="card-title" style="margin-bottom:0.75rem;">${t.title}</h4>
           <p style="color:var(--text-secondary); margin-bottom:0.75rem;">${t.content || ''}</p>
           ${t.examples ? `
@@ -497,47 +558,49 @@ document.addEventListener('DOMContentLoaded', () => {
           ` : ''}
           ${t.note ? `<div class="callout"><div class="callout-title">📌 Test Note</div><p style="font-size:0.875rem;">${t.note}</p></div>` : ''}
           ${t.pitfalls ? `
-            <div style="display:flex; flex-direction:column; gap:0.5rem;">
-              ${t.pitfalls.map(pf => `
-                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm); font-size:0.875rem;">
-                  <strong style="color:var(--brand-primary);">${pf.rule}:</strong>
-                  <div style="color:#ef4444; margin-top:0.25rem;">❌ ${pf.wrong}</div>
-                  <div style="color:var(--writing-color); font-weight:600;">✅ ${pf.right}</div>
-                </div>
-              `).join('')}
-            </div>
-          ` : ''}
-          ${t.rules ? `
-            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.5rem;">
-              ${t.rules.map(rl => `
-                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm); font-size:0.875rem;">
-                  <strong style="color:var(--writing-color); display:block; margin-bottom:0.25rem;">${rl.title}</strong>
-                  <p style="color:var(--text-secondary);">${rl.desc}</p>
+            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
+              ${t.pitfalls.map(p => `
+                <div style="font-size:0.875rem; background:var(--bg-tertiary); padding:0.65rem; border-radius:var(--radius-sm);">
+                  <strong style="color:var(--text-primary);">${p.rule}:</strong>
+                  <div style="color:#ef4444; margin-top:0.25rem;">❌ ${p.wrong}</div>
+                  <div style="color:var(--writing-color); margin-top:0.15rem;">✅ ${p.right}</div>
                 </div>
               `).join('')}
             </div>
           ` : ''}
           ${t.details ? `
-            <div style="display:flex; flex-direction:column; gap:0.5rem;">
-              ${t.details.map(dt => `
-                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm); font-size:0.875rem;">
-                  <strong>${dt.type}:</strong> ${dt.ex || ''}
-                  ${dt.fix ? `<div style="color:var(--writing-color); font-weight:600;">Fix: ${dt.fix}</div>` : ''}
-                  ${dt.fix1 ? `
-                    <div style="margin-top:0.25rem; color:var(--text-primary);">
-                      <div>${dt.fix1}</div><div>${dt.fix2}</div><div>${dt.fix3}</div>
+            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
+              ${t.details.map(d => `
+                <div style="font-size:0.875rem; background:var(--bg-tertiary); padding:0.65rem; border-radius:var(--radius-sm);">
+                  <strong style="color:var(--writing-color);">${d.type}:</strong> ${d.ex || ''}
+                  ${d.fix ? `<div style="color:var(--text-primary); font-weight:600; margin-top:0.25rem;">Fix: ${d.fix}</div>` : ''}
+                  ${d.fix1 ? `
+                    <div style="margin-top:0.35rem; display:flex; flex-direction:column; gap:0.2rem;">
+                      <div>${d.fix1}</div>
+                      <div>${d.fix2}</div>
+                      <div>${d.fix3}</div>
                     </div>
                   ` : ''}
                 </div>
               `).join('')}
             </div>
           ` : ''}
+          ${t.rules ? `
+            <div class="grid-2" style="margin-top:0.75rem;">
+              ${t.rules.map(r => `
+                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm);">
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:0.25rem;">${r.title}</strong>
+                  <p style="font-size:0.85rem; color:var(--text-secondary); white-space:pre-line;">${r.desc}</p>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
           ${t.words ? `
-            <div class="grid-3" style="margin-top:0.75rem;">
+            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
               ${t.words.map(w => `
-                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-md);">
-                  <strong style="color:var(--writing-color); font-size:1rem; display:block; margin-bottom:0.25rem;">${w.pair}</strong>
-                  <p style="font-size:0.85rem; color:var(--text-secondary);">${w.desc}</p>
+                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm); font-size:0.875rem;">
+                  <strong style="color:var(--writing-color); display:block; margin-bottom:0.25rem;">${w.pair}</strong>
+                  <p style="color:var(--text-secondary); white-space:pre-line;">${w.desc}</p>
                 </div>
               `).join('')}
             </div>
@@ -548,26 +611,26 @@ document.addEventListener('DOMContentLoaded', () => {
       <!-- Part 2: K-3 Writing Scenarios -->
       <h3 style="font-size:1.3rem; font-weight:700; margin:2rem 0 1rem;">${data.part2.title}</h3>
       ${data.part2.topics.map(t => `
-        <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card" id="${t.id}" style="margin-bottom:1.5rem;">
           <h4 class="card-title" style="margin-bottom:0.75rem;">${t.title}</h4>
           <p style="color:var(--text-secondary); margin-bottom:0.75rem;">${t.content || ''}</p>
-          ${t.activities ? `<ul style="margin-left:1.25rem; font-size:0.9rem; color:var(--text-secondary);">${t.activities.map(a => `<li style="margin-bottom:0.25rem;">${a}</li>`).join('')}</ul>` : ''}
+          ${t.activities ? `<ul style="margin-left:1.25rem; font-size:0.9rem; color:var(--text-secondary);">${t.activities.map(a => `<li style="margin-bottom:0.35rem;">${a}</li>`).join('')}</ul>` : ''}
           ${t.steps ? `
-            <div style="display:flex; flex-direction:column; gap:0.75rem;">
-              ${t.steps.map(st => `
-                <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-md);">
-                  <h5 style="color:var(--writing-color); font-size:0.95rem; margin-bottom:0.25rem;">${st.name}</h5>
-                  <p style="font-size:0.875rem; color:var(--text-secondary);">${st.desc}</p>
+            <div style="display:flex; flex-direction:column; gap:0.75rem; margin-top:0.75rem;">
+              ${t.steps.map(s => `
+                <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-sm);">
+                  <strong style="color:var(--writing-color); font-size:0.95rem; display:block; margin-bottom:0.25rem;">${s.name}</strong>
+                  <p style="font-size:0.875rem; color:var(--text-secondary); white-space:pre-line;">${s.desc}</p>
                 </div>
               `).join('')}
             </div>
           ` : ''}
           ${t.populations ? `
             <div class="grid-2" style="margin-top:0.75rem;">
-              ${t.populations.map(pop => `
-                <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-md);">
-                  <strong style="color:var(--brand-primary); font-size:0.95rem;">${pop.group}</strong>
-                  <p style="font-size:0.85rem; color:var(--text-secondary); margin-top:0.25rem;">${pop.strategy}</p>
+              ${t.populations.map(p => `
+                <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-sm);">
+                  <strong style="color:var(--text-primary); display:block; margin-bottom:0.25rem;">${p.group}</strong>
+                  <p style="font-size:0.85rem; color:var(--text-secondary); white-space:pre-line;">${p.strategy}</p>
                 </div>
               `).join('')}
             </div>
@@ -575,25 +638,28 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `).join('')}
 
-      <h4 style="font-size:1.15rem; font-weight:700; margin:1.5rem 0 1rem;">Practice Writing Scenarios</h4>
-      ${data.part2.scenarios.map(sc => `
-        <div class="scenario-box">
-          <div class="scenario-q">${sc.q}</div>
-          <div class="scenario-correct">${sc.correct}</div>
-          <div class="scenario-why">${sc.why}</div>
-        </div>
-      `).join('')}
+      <div class="card" style="border-top:4px solid var(--writing-color); margin-top:2rem;">
+        <h4 style="font-size:1.1rem; font-weight:700; margin-bottom:1rem;">Practice Scenarios for the Assessment</h4>
+        ${data.part2.scenarios.map(sc => `
+          <div style="margin-bottom:1.25rem;">
+            <p style="font-weight:700; font-size:0.95rem; margin-bottom:0.35rem;">${sc.q}</p>
+            <div class="scenario-correct">${sc.correct}</div>
+            <div class="scenario-why">${sc.why}</div>
+          </div>
+        `).join('')}
+        <div class="callout" style="margin-top:1rem;"><p style="font-size:0.9rem; font-weight:600;">${data.part2.keyTakeaway}</p></div>
+      </div>
     `;
   }
 
-  // Render Math Module & Visual Manipulatives
+  // Render Expanded Math Module
   function renderMathModule() {
     const container = document.getElementById('view-math');
     if (!container) return;
     const data = STUDY_DATA.math;
 
     container.innerHTML = `
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; flex-wrap:wrap; gap:1rem;">
         <div>
           <h2 style="font-size:1.8rem; font-weight:800; color:var(--math-color);">${data.title}</h2>
           <p style="color:var(--text-secondary);">${data.subtitle}</p>
@@ -601,114 +667,127 @@ document.addEventListener('DOMContentLoaded', () => {
         <button class="btn btn-primary" onclick="window.appSwitchTab('quiz')">Take Math Quiz</button>
       </div>
 
-      <!-- Interactive Ten-Frame Visualizer -->
-      <div class="manipulative-container">
-        <div class="manipulative-title">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="12" x2="21" y2="12"></line><line x1="12" y1="3" x2="12" y2="21"></line></svg>
-          Interactive Ten-Frame Simulator (Bridge to 10)
-        </div>
-        <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:1rem;">Visualize how K-1 students solve addition like <strong>8 + 5</strong> by filling frame 1 to 10 first, with 3 spilling into frame 2 (10 + 3 = 13).</p>
-        
-        <div style="display:flex; align-items:center; justify-content:center; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem;">
-          <label>First Number (0-10): <input type="number" id="ten-num1" value="8" min="0" max="10" style="width:60px; padding:0.4rem; border-radius:6px; border:1px solid var(--border-color);"></label>
-          <label>Second Number (0-10): <input type="number" id="ten-num2" value="5" min="0" max="10" style="width:60px; padding:0.4rem; border-radius:6px; border:1px solid var(--border-color);"></label>
-          <button class="btn btn-primary" id="btn-update-tenframe">Update Frames</button>
-        </div>
+      <div class="callout" style="border-left-color:var(--math-color); background-color:var(--math-bg); color:var(--text-primary); margin-bottom:1.5rem;">
+        <p style="font-size:0.95rem;">${data.intro}</p>
+      </div>
 
-        <div style="display:flex; justify-content:center; gap:2rem; flex-wrap:wrap;">
-          <div>
-            <h5 style="text-align:center; font-size:0.85rem; color:var(--text-muted); margin-bottom:0.5rem;">Frame 1 (Ten-Frame)</h5>
-            <div class="ten-frame-grid" id="frame-1"></div>
-          </div>
-          <div>
-            <h5 style="text-align:center; font-size:0.85rem; color:var(--text-muted); margin-bottom:0.5rem;">Frame 2 (Spillover)</h5>
-            <div class="ten-frame-grid" id="frame-2"></div>
-          </div>
-        </div>
-        <div id="tenframe-result" style="text-align:center; margin-top:1rem; font-weight:700; color:var(--math-color); font-size:1.1rem;"></div>
+      <div class="quick-jump-bar">
+        <span class="quick-jump-title">Quick Jump:</span>
+        <a class="jump-pill" onclick="document.getElementById('m1-1')?.scrollIntoView({behavior:'smooth'})">1. PEMDAS</a>
+        <a class="jump-pill" onclick="document.getElementById('m1-2')?.scrollIntoView({behavior:'smooth'})">2. Fractions</a>
+        <a class="jump-pill" onclick="document.getElementById('m1-3')?.scrollIntoView({behavior:'smooth'})">3. Percentages</a>
+        <a class="jump-pill" onclick="document.getElementById('m1-4')?.scrollIntoView({behavior:'smooth'})">4. Algebra</a>
+        <a class="jump-pill" onclick="document.getElementById('m1-5')?.scrollIntoView({behavior:'smooth'})">5. Geometry</a>
+        <a class="jump-pill" onclick="document.getElementById('m1-6')?.scrollIntoView({behavior:'smooth'})">6. Statistics</a>
+        <a class="jump-pill" onclick="document.getElementById('m2-1')?.scrollIntoView({behavior:'smooth'})">K-3 Scenarios</a>
       </div>
 
       <!-- Part 1: Foundational Math -->
       <h3 style="font-size:1.3rem; font-weight:700; margin-bottom:1rem;">${data.part1.title}</h3>
       ${data.part1.topics.map(t => `
-        <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card" id="${t.id}" style="margin-bottom:1.5rem;">
           <h4 class="card-title" style="margin-bottom:0.75rem;">${t.title}</h4>
           <p style="color:var(--text-secondary); margin-bottom:0.75rem;">${t.content || ''}</p>
-          ${t.steps ? `<ol style="margin-left:1.25rem; font-size:0.9rem; color:var(--text-secondary);">${t.steps.map(s => `<li>${s}</li>`).join('')}</ol>` : ''}
+          ${t.steps ? `
+            <ol style="margin-left:1.25rem; font-size:0.9rem; color:var(--text-secondary); margin-bottom:0.75rem;">
+              ${t.steps.map(s => `<li>${s}</li>`).join('')}
+            </ol>
+          ` : ''}
           ${t.example ? `
-            <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-md); margin-top:0.75rem; font-size:0.9rem;">
-              <strong>Example:</strong>
+            <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-sm); font-size:0.9rem;">
               ${typeof t.example === 'object' ? `
-                <div style="margin-top:0.25rem; font-family:'Fira Code', monospace; color:var(--math-color); font-weight:600;">${t.example.expr}</div>
+                <div style="font-weight:700; font-family:var(--font-mono); font-size:1rem; color:var(--math-color); margin-bottom:0.35rem;">${t.example.expr}</div>
                 <div>${t.example.step1}</div>
                 <div>${t.example.step2}</div>
-                <div>${t.example.step3}</div>
-              ` : `<span>${t.example}</span>`}
+                <div style="font-weight:600; color:var(--text-primary); margin-top:0.25rem;">${t.example.step3}</div>
+              ` : `<div style="white-space:pre-line;">${t.example}</div>`}
             </div>
           ` : ''}
           ${t.details ? `
-            <div style="display:flex; flex-direction:column; gap:0.5rem;">
-              ${t.details.map(d => `<div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm); font-size:0.875rem;">${d}</div>`).join('')}
+            <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
+              ${t.details.map(d => `
+                <div style="background:var(--bg-tertiary); padding:0.75rem; border-radius:var(--radius-sm); font-size:0.875rem;">
+                  <p style="color:var(--text-secondary); white-space:pre-line;">${d}</p>
+                </div>
+              `).join('')}
             </div>
           ` : ''}
         </div>
       `).join('')}
 
-      <!-- Part 2: K-3 Math Scenarios -->
+      <!-- Part 2: K-3 Math Scenarios & Interactive Visualizers -->
       <h3 style="font-size:1.3rem; font-weight:700; margin:2rem 0 1rem;">${data.part2.title}</h3>
+      
+      <!-- Interactive Ten-Frame Visualizer -->
+      <div class="manipulative-container">
+        <h4 class="manipulative-title">🧮 Interactive Ten-Frame Visualizer (K-1st Grade)</h4>
+        <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:1rem;">Visualizing how students "bridge to ten" during addition:</p>
+        <div style="display:flex; gap:1rem; align-items:center; margin-bottom:1rem; flex-wrap:wrap;">
+          <label style="font-size:0.875rem; font-weight:600;">Start Count: <input type="number" id="ten-num1" value="8" min="1" max="9" style="width:60px; padding:0.35rem; border-radius:4px; border:1px solid var(--border-color);"></label>
+          <label style="font-size:0.875rem; font-weight:600;">Add Count: <input type="number" id="ten-num2" value="5" min="1" max="9" style="width:60px; padding:0.35rem; border-radius:4px; border:1px solid var(--border-color);"></label>
+          <button class="btn btn-primary" id="btn-update-tenframe">Update Visualizer</button>
+        </div>
+        <div style="display:flex; gap:1.5rem; flex-wrap:wrap; justify-content:center; margin:1rem 0;">
+          <div>
+            <div style="text-align:center; font-size:0.8rem; font-weight:700; margin-bottom:0.35rem;">Frame 1 (Base 10)</div>
+            <div class="ten-frame-grid" id="frame-1"></div>
+          </div>
+          <div>
+            <div style="text-align:center; font-size:0.8rem; font-weight:700; margin-bottom:0.35rem;">Frame 2 (Spillover)</div>
+            <div class="ten-frame-grid" id="frame-2"></div>
+          </div>
+        </div>
+        <div id="tenframe-result" style="text-align:center; font-size:0.95rem; font-weight:600; color:var(--brand-primary); margin-top:0.5rem;"></div>
+      </div>
+
       ${data.part2.topics.map(t => `
-        <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card" id="${t.id}" style="margin-bottom:1.5rem;">
           <h4 class="card-title" style="margin-bottom:0.75rem;">${t.title}</h4>
           <p style="color:var(--text-secondary); margin-bottom:0.75rem;">${t.content || ''}</p>
           ${t.tools ? `
-            <div style="display:flex; flex-direction:column; gap:0.75rem;">
+            <div style="display:flex; flex-direction:column; gap:0.75rem; margin-top:0.75rem;">
               ${t.tools.map(tl => `
-                <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-md);">
-                  <strong style="color:var(--math-color); font-size:0.95rem; display:block;">${tl.name}</strong>
-                  <p style="font-size:0.875rem; color:var(--text-secondary);">${tl.desc}</p>
+                <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-sm);">
+                  <strong style="color:var(--math-color); font-size:0.95rem; display:block; margin-bottom:0.25rem;">${tl.name}</strong>
+                  <p style="font-size:0.875rem; color:var(--text-secondary); white-space:pre-line;">${tl.desc}</p>
                 </div>
               `).join('')}
             </div>
           ` : ''}
           ${t.errors ? `
             <div class="grid-2" style="margin-top:0.75rem;">
-              ${t.errors.map(err => `
-                <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-md);">
-                  <strong style="color:#ef4444; font-size:0.95rem;">${err.name}</strong>
-                  <div style="font-family:'Fira Code', monospace; margin:0.25rem 0; font-weight:700;">Problem: ${err.problem}</div>
-                  <p style="font-size:0.85rem; color:var(--text-secondary);">${err.diagnosis}</p>
+              ${t.errors.map(er => `
+                <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-sm);">
+                  <strong style="color:#ef4444; display:block; margin-bottom:0.35rem;">${er.name}</strong>
+                  <div style="font-family:var(--font-mono); font-size:0.875rem; background:var(--bg-primary); padding:0.5rem; border-radius:var(--radius-sm); margin-bottom:0.5rem;">
+                    <strong>Problem:</strong> ${er.problem}
+                  </div>
+                  <p style="font-size:0.85rem; color:var(--text-secondary);">${er.diagnosis}</p>
                 </div>
               `).join('')}
             </div>
           ` : ''}
           ${t.scaffolding ? `
-            <ol style="margin-left:1.25rem; font-size:0.9rem; color:var(--text-secondary); margin-top:0.5rem;">
-              ${t.scaffolding.map(scaf => `<li style="margin-bottom:0.25rem;">${scaf}</li>`).join('')}
-            </ol>
-          ` : ''}
-          ${t.strategy ? `
-            <div class="callout" style="border-left-color:var(--math-color); background:var(--math-bg); margin-top:0.75rem;">
-              <div class="callout-title">💡 Strategy</div>
-              <p style="font-size:0.9rem;">${t.strategy}</p>
+            <div style="background:var(--bg-tertiary); padding:0.85rem; border-radius:var(--radius-sm); font-size:0.875rem; margin-top:0.75rem;">
+              ${t.scaffolding.map(sc => `<p style="margin-bottom:0.35rem; color:var(--text-secondary); white-space:pre-line;">${sc}</p>`).join('')}
             </div>
           ` : ''}
-          ${t.solution ? `
-            <div class="callout" style="border-left-color:var(--writing-color); background:var(--writing-bg); margin-top:0.75rem;">
-              <div class="callout-title">✅ Pedagogical Solution</div>
-              <p style="font-size:0.9rem;">${t.solution}</p>
-            </div>
-          ` : ''}
+          ${t.strategy ? `<div class="callout"><p style="font-size:0.9rem; color:var(--text-secondary); white-space:pre-line;">${t.strategy}</p></div>` : ''}
+          ${t.solution ? `<div class="callout" style="border-left-color:var(--math-color);"><p style="font-size:0.9rem; color:var(--text-secondary); white-space:pre-line;">${t.solution}</p></div>` : ''}
         </div>
       `).join('')}
 
-      <h4 style="font-size:1.15rem; font-weight:700; margin:1.5rem 0 1rem;">Practice Math Scenarios</h4>
-      ${data.part2.scenarios.map(sc => `
-        <div class="scenario-box">
-          <div class="scenario-q">${sc.q}</div>
-          <div class="scenario-correct">${sc.correct}</div>
-          <div class="scenario-why">${sc.why}</div>
-        </div>
-      `).join('')}
+      <div class="card" style="border-top:4px solid var(--math-color); margin-top:2rem;">
+        <h4 style="font-size:1.1rem; font-weight:700; margin-bottom:1rem;">Practice Scenarios for the Assessment</h4>
+        ${data.part2.scenarios.map(sc => `
+          <div style="margin-bottom:1.25rem;">
+            <p style="font-weight:700; font-size:0.95rem; margin-bottom:0.35rem;">${sc.q}</p>
+            <div class="scenario-correct">${sc.correct}</div>
+            <div class="scenario-why">${sc.why}</div>
+          </div>
+        `).join('')}
+        <div class="callout" style="margin-top:1rem;"><p style="font-size:0.9rem; font-weight:600;">${data.part2.keyTakeaway}</p></div>
+      </div>
     `;
 
     // Bind Ten-Frame controls
@@ -762,15 +841,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Render Flashcards Engine
+  // Render Flashcards Module
+  function getActiveFlashcards() {
+    if (state.flashcards.shuffledDeck) {
+      return state.flashcards.shuffledDeck;
+    }
+    return state.flashcards.filterCategory === 'All'
+      ? STUDY_DATA.flashcards
+      : STUDY_DATA.flashcards.filter(c => c.category === state.flashcards.filterCategory);
+  }
+
+  function getActiveFlashcard() {
+    const cards = getActiveFlashcards();
+    return cards[state.flashcards.currentIndex] || cards[0];
+  }
+
   function renderFlashcards() {
     const container = document.getElementById('view-flashcards');
     if (!container) return;
 
-    const cards = state.flashcards.filterCategory === 'All'
-      ? STUDY_DATA.flashcards
-      : STUDY_DATA.flashcards.filter(c => c.category === state.flashcards.filterCategory);
-
+    const cards = getActiveFlashcards();
     const currentCard = cards[state.flashcards.currentIndex] || cards[0];
     const isMastered = state.flashcards.masteredIds.includes(currentCard.id);
 
@@ -781,10 +871,14 @@ document.addEventListener('DOMContentLoaded', () => {
           <p style="color:var(--text-secondary);">Master key concepts, rules, and pedagogical terms.</p>
         </div>
 
-        <div style="display:flex; gap:0.5rem;">
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
           ${['All', 'Reading', 'Writing', 'Math'].map(cat => `
-            <button class="btn ${state.flashcards.filterCategory === cat ? 'btn-primary' : 'btn-outline'}" onclick="window.appFilterFlashcards('${cat}')">${cat}</button>
+            <button class="btn ${state.flashcards.filterCategory === cat && !state.flashcards.shuffledDeck ? 'btn-primary' : 'btn-outline'}" onclick="window.appFilterFlashcards('${cat}')">${cat}</button>
           `).join('')}
+          <button class="btn btn-outline" onclick="window.appShuffleFlashcards()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"></path><path d="M4 20L21 3"></path><path d="M21 16v5h-5"></path><path d="M15 15l6 6"></path><path d="M4 4l5 5"></path></svg>
+            Shuffle Deck
+          </button>
         </div>
       </div>
 
@@ -793,7 +887,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="flashcard-front">
             <span class="flashcard-category">${currentCard.category} • ${currentCard.tag}</span>
             <div class="flashcard-q">${currentCard.question}</div>
-            <span style="font-size:0.8rem; color:var(--text-muted); margin-top:1rem;">Click to flip 🔄</span>
+            <span style="font-size:0.8rem; color:var(--text-muted); margin-top:1rem;">Click or press Space to flip 🔄</span>
           </div>
           <div class="flashcard-back">
             <span class="flashcard-category" style="background:var(--writing-bg); color:var(--writing-color);">Answer Key</span>
@@ -809,28 +903,51 @@ document.addEventListener('DOMContentLoaded', () => {
             ${isMastered ? '✓ Mastered' : 'Mark as Mastered'}
           </button>
         </div>
+
+        <div class="keyboard-legend">
+          <span><span class="key-cap">←</span> <span class="key-cap">→</span> Navigate</span>
+          <span><span class="key-cap">Space</span> Flip Card</span>
+          <span><span class="key-cap">M</span> Mastered</span>
+        </div>
       </div>
     `;
   }
 
+  window.appFlipFlashcard = () => {
+    const el = document.getElementById('flashcard-element');
+    if (el) el.classList.toggle('flipped');
+  };
+
   window.appFilterFlashcards = (cat) => {
+    state.flashcards.shuffledDeck = null;
     state.flashcards.filterCategory = cat;
     state.flashcards.currentIndex = 0;
     renderFlashcards();
   };
 
-  window.appPrevFlashcard = () => {
+  window.appShuffleFlashcards = () => {
     const cards = state.flashcards.filterCategory === 'All'
-      ? STUDY_DATA.flashcards
+      ? [...STUDY_DATA.flashcards]
       : STUDY_DATA.flashcards.filter(c => c.category === state.flashcards.filterCategory);
+
+    for (let i = cards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [cards[i], cards[j]] = [cards[j], cards[i]];
+    }
+
+    state.flashcards.shuffledDeck = cards;
+    state.flashcards.currentIndex = 0;
+    renderFlashcards();
+  };
+
+  window.appPrevFlashcard = () => {
+    const cards = getActiveFlashcards();
     state.flashcards.currentIndex = (state.flashcards.currentIndex - 1 + cards.length) % cards.length;
     renderFlashcards();
   };
 
   window.appNextFlashcard = () => {
-    const cards = state.flashcards.filterCategory === 'All'
-      ? STUDY_DATA.flashcards
-      : STUDY_DATA.flashcards.filter(c => c.category === state.flashcards.filterCategory);
+    const cards = getActiveFlashcards();
     state.flashcards.currentIndex = (state.flashcards.currentIndex + 1) % cards.length;
     renderFlashcards();
   };
@@ -846,6 +963,59 @@ document.addEventListener('DOMContentLoaded', () => {
     updateProgressWidget();
   };
 
+  // Timer Helpers for Quiz
+  function formatTimer(totalSecs) {
+    const m = Math.floor(totalSecs / 60);
+    const s = totalSecs % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+
+  function startQuizTimer() {
+    if (state.quiz.timerInterval) clearInterval(state.quiz.timerInterval);
+    state.quiz.timerRunning = true;
+    state.quiz.timerInterval = setInterval(() => {
+      if (state.quiz.timerSeconds > 0) {
+        state.quiz.timerSeconds--;
+        const timerEl = document.getElementById('quiz-timer-display');
+        if (timerEl) {
+          timerEl.textContent = formatTimer(state.quiz.timerSeconds);
+          if (state.quiz.timerSeconds < 300) {
+            timerEl.parentElement.classList.add('warning');
+          }
+        }
+      } else {
+        clearInterval(state.quiz.timerInterval);
+        state.quiz.timerRunning = false;
+        state.quiz.completed = true;
+        renderQuiz();
+      }
+    }, 1000);
+  }
+
+  window.appToggleQuizTimer = () => {
+    if (state.quiz.timerRunning) {
+      if (state.quiz.timerInterval) clearInterval(state.quiz.timerInterval);
+      state.quiz.timerRunning = false;
+    } else {
+      startQuizTimer();
+    }
+    renderQuiz();
+  };
+
+  window.appToggleFlagQuestion = (id) => {
+    if (state.quiz.flaggedIds.includes(id)) {
+      state.quiz.flaggedIds = state.quiz.flaggedIds.filter(i => i !== id);
+    } else {
+      state.quiz.flaggedIds.push(id);
+    }
+    renderQuiz();
+  };
+
+  window.appJumpToQuestion = (index) => {
+    state.quiz.currentIndex = index;
+    renderQuiz();
+  };
+
   // Render Practice Assessment Quiz
   function renderQuiz() {
     const container = document.getElementById('view-quiz');
@@ -854,6 +1024,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const questions = STUDY_DATA.assessment.questions;
     const currentQ = questions[state.quiz.currentIndex];
     const selectedOption = state.quiz.userAnswers[currentQ.id];
+    const isFlagged = state.quiz.flaggedIds.includes(currentQ.id);
 
     if (state.quiz.completed) {
       renderQuizResults(container);
@@ -868,21 +1039,49 @@ document.addEventListener('DOMContentLoaded', () => {
             <div style="font-size:0.8rem; font-weight:700; color:var(--brand-primary);">${currentQ.section} • ${currentQ.type}</div>
           </div>
 
-          <div style="display:flex; gap:0.5rem;">
+          <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+            ${state.quiz.mode === 'exam' ? `
+              <div class="quiz-timer ${state.quiz.timerSeconds < 300 ? 'warning' : ''}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                <span id="quiz-timer-display">${formatTimer(state.quiz.timerSeconds)}</span>
+                <button style="background:none; border:none; cursor:pointer; color:inherit; margin-left:0.25rem;" onclick="window.appToggleQuizTimer()">
+                  ${state.quiz.timerRunning ? '⏸' : '▶'}
+                </button>
+              </div>
+            ` : ''}
             <button class="btn ${state.quiz.mode === 'practice' ? 'btn-primary' : 'btn-outline'}" onclick="window.appSetQuizMode('practice')">Practice Mode</button>
             <button class="btn ${state.quiz.mode === 'exam' ? 'btn-primary' : 'btn-outline'}" onclick="window.appSetQuizMode('exam')">Exam Mode</button>
           </div>
         </div>
 
         <div class="quiz-mode-banner">
-          <div style="font-weight:700; font-size:0.95rem; color:var(--brand-primary); margin-bottom:0.25rem; display:flex; align-items:center; gap:0.4rem;">
-            💡 ${state.quiz.mode === 'practice' ? 'Practice Mode' : 'Exam Mode'}
+          <div style="font-weight:700; font-size:0.95rem; color:var(--brand-primary); margin-bottom:0.25rem; display:flex; align-items:center; justify-content:space-between;">
+            <span>💡 ${state.quiz.mode === 'practice' ? 'Practice Mode' : 'Exam Mode'}</span>
+            <button class="flag-btn ${isFlagged ? 'flagged' : ''}" onclick="window.appToggleFlagQuestion(${currentQ.id})">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="${isFlagged ? '#f59e0b' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+              ${isFlagged ? 'Flagged for Review' : 'Flag Question'}
+            </button>
           </div>
           <p style="font-size:0.85rem; color:var(--text-secondary); margin:0;">
             ${state.quiz.mode === 'practice'
               ? '<strong>Practice Mode:</strong> Answers are checked immediately with step-by-step rationale and explanations so you learn as you go.'
               : '<strong>Exam Mode:</strong> Answers are saved silently without feedback to simulate official timed exam conditions. A detailed score report is shown upon submission.'}
           </p>
+        </div>
+
+        <!-- Question Navigator Grid (1-15) -->
+        <div style="margin-bottom:0.5rem; font-size:0.8rem; font-weight:700; color:var(--text-muted);">QUESTION NAVIGATOR:</div>
+        <div class="question-nav-grid">
+          ${questions.map((q, idx) => {
+            const isCurrent = idx === state.quiz.currentIndex;
+            const isAnswered = state.quiz.userAnswers[q.id] !== undefined;
+            const qFlagged = state.quiz.flaggedIds.includes(q.id);
+            let cls = 'q-nav-btn';
+            if (isCurrent) cls += ' active';
+            if (isAnswered) cls += ' answered';
+            if (qFlagged) cls += ' flagged';
+            return `<button class="${cls}" onclick="window.appJumpToQuestion(${idx})" title="Question ${q.id} ${qFlagged ? '(Flagged)' : ''}">${q.id}</button>`;
+          }).join('')}
         </div>
 
         <div class="question-text">${currentQ.question}</div>
@@ -923,11 +1122,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.appSetQuizMode = (mode) => {
     state.quiz.mode = mode;
+    if (mode === 'exam' && !state.quiz.timerRunning) {
+      startQuizTimer();
+    }
     renderQuiz();
   };
 
-  window.appSelectOption = (qId, optionIndex) => {
-    state.quiz.userAnswers[qId] = optionIndex;
+  window.appSelectOption = (questionId, optionIdx) => {
+    state.quiz.userAnswers[questionId] = optionIdx;
     renderQuiz();
   };
 
@@ -939,50 +1141,44 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   window.appNextQuestion = () => {
-    if (state.quiz.currentIndex < STUDY_DATA.assessment.questions.length - 1) {
+    const questions = STUDY_DATA.assessment.questions;
+    if (state.quiz.currentIndex < questions.length - 1) {
       state.quiz.currentIndex++;
       renderQuiz();
     }
   };
 
   window.appSubmitQuiz = () => {
+    if (state.quiz.timerInterval) clearInterval(state.quiz.timerInterval);
+    state.quiz.timerRunning = false;
     state.quiz.completed = true;
-    let score = 0;
-    const questions = STUDY_DATA.assessment.questions;
-    questions.forEach(q => {
-      if (state.quiz.userAnswers[q.id] === q.answer) score++;
-    });
-
-    state.quiz.score = score;
-    const percentage = Math.round((score / questions.length) * 100);
-
-    // Save to history
-    state.quiz.history.push({
-      date: new Date().toLocaleDateString(),
-      score: score,
-      total: questions.length,
-      percentage: percentage
-    });
-
-    localStorage.setItem('quizHistory', JSON.stringify(state.quiz.history));
     renderQuiz();
-    updateProgressWidget();
   };
 
   function renderQuizResults(container) {
     const questions = STUDY_DATA.assessment.questions;
-    const score = state.quiz.score;
-    const percentage = Math.round((score / questions.length) * 100);
+    let score = 0;
+    let readingScore = 0;
+    let writingScore = 0;
+    let mathScore = 0;
 
-    let readingScore = 0, writingScore = 0, mathScore = 0;
     questions.forEach(q => {
-      const isCorrect = state.quiz.userAnswers[q.id] === q.answer;
+      const userChoice = state.quiz.userAnswers[q.id];
+      const isCorrect = userChoice === q.answer;
       if (isCorrect) {
+        score++;
         if (q.section === 'Reading') readingScore++;
         if (q.section === 'Writing') writingScore++;
         if (q.section === 'Math') mathScore++;
       }
     });
+
+    const percentage = Math.round((score / questions.length) * 100);
+
+    // Save history
+    state.quiz.history.push({ date: new Date().toLocaleDateString(), score, total: questions.length, percentage });
+    localStorage.setItem('quizHistory', JSON.stringify(state.quiz.history));
+    updateProgressWidget();
 
     container.innerHTML = `
       <div class="quiz-container" style="text-align:center;">
@@ -1013,9 +1209,13 @@ document.addEventListener('DOMContentLoaded', () => {
           ${questions.map(q => {
             const userChoice = state.quiz.userAnswers[q.id];
             const isCorrect = userChoice === q.answer;
+            const isFlagged = state.quiz.flaggedIds.includes(q.id);
             return `
               <div class="card" style="border-left: 4px solid ${isCorrect ? 'var(--writing-color)' : '#ef4444'};">
-                <div style="font-weight:700; font-size:0.95rem; margin-bottom:0.5rem;">Q${q.id}. ${q.question}</div>
+                <div style="font-weight:700; font-size:0.95rem; margin-bottom:0.5rem; display:flex; justify-content:space-between; align-items:center;">
+                  <span>Q${q.id}. ${q.question}</span>
+                  ${isFlagged ? '<span style="font-size:0.75rem; background:#fef3c7; color:#b45309; padding:0.15rem 0.5rem; border-radius:4px;">🚩 Flagged</span>' : ''}
+                </div>
                 <div style="font-size:0.875rem; margin-bottom:0.35rem; color:${isCorrect ? 'var(--writing-color)' : '#ef4444'}; font-weight:600;">
                   Your answer: ${userChoice !== undefined ? q.options[userChoice] : 'Not Answered'} ${isCorrect ? '✓' : '❌'}
                 </div>
@@ -1034,9 +1234,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   window.appRetakeQuiz = () => {
+    if (state.quiz.timerInterval) clearInterval(state.quiz.timerInterval);
     state.quiz.completed = false;
     state.quiz.currentIndex = 0;
     state.quiz.userAnswers = {};
+    state.quiz.flaggedIds = [];
+    state.quiz.timerSeconds = 1800;
+    state.quiz.timerRunning = false;
     renderQuiz();
   };
 });
