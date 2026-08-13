@@ -283,7 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div style="display:flex; flex-direction:column; gap:1rem;">
             ${data.testTips.map(tip => `
               <div>
-                <div style="font-weight:700; font-size:0.95rem; color:var(--text-primary); margin-bottom:0.25rem;">✨ ${tip.title}</div>
+                <div style="font-weight:700; font-size:0.95rem; color:var(--text-primary); margin-bottom:0.25rem;">${tip.title}</div>
                 <p style="font-size:0.875rem; color:var(--text-secondary);">${tip.desc}</p>
               </div>
             `).join('')}
